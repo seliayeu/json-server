@@ -1,31 +1,52 @@
+use axum::routing::{post, put};
 use axum::{
     routing::get,
     extract::State,
     Router,
 };
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
+use std::sync::Mutex;
 use std::{env, sync::Arc};
 use std::fs;
 use clap::{arg, command, value_parser, Command};
 use std::net::SocketAddr;
-use serde_json::{Result, Value};
+use serde_json::{Result, Value, Map};
 use handlers::*;
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 
 pub mod handlers;
 
-#[tokio::main]
+#[derive(Clone)]
+pub struct AppState {
+    json_dict: Arc<Mutex<Map<String, Value>>>,
+    json_path: PathBuf,
+}
 
+#[tokio::main]
 async fn main() {
     let matches = cli().get_matches();
 
-    let db_path = matches.get_one::<PathBuf>("watch").unwrap();
-    let port = matches.get_one::<u16>("port").unwrap().clone(); 
-    let contents = fs::read_to_string(db_path)
-        .expect("Couldn't find database file");
-    let parsed_json: Value = serde_json::from_str(&contents).unwrap();
+    let db_path = matches.get_one::<PathBuf>("watch").unwrap().clone();
 
-    let app = get_routes(Arc::new(parsed_json));
+
+    let port = *matches.get_one::<u16>("port").unwrap(); 
+    let contents = fs::read_to_string(db_path.clone())
+        .expect("Couldn't find database file");
+
+    let parsed_json: Value = serde_json::from_str(&contents).unwrap();
+    let state = AppState{ 
+        json_dict: Arc::new( Mutex::new(parsed_json.as_object().unwrap().clone())),
+        json_path: db_path.clone(),
+    };
+
+    let app = get_routes(state.clone());
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
+
+    // tokio::spawn(async move {
+    //     if let Err(e) = watch(state.clone()) {
+    //         println!("error: {:?}", e)
+    //     }
+    // });
 
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
@@ -33,20 +54,44 @@ async fn main() {
         .unwrap();
 }
 
-fn get_routes(state: Arc<Value>) -> Router {
-    let parsed_json = (*state).clone();
 
-    let json_map = parsed_json.as_object().unwrap();
+// fn watch(state: AppState) -> notify::Result<()> {
+//     let (tx, rx) = std::sync::mpsc::channel();
 
-    for (key, value) in json_map {
-        println!("{}: {}", key, value);
-    }
+//     let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
 
+//     let path = state.json_path;
+//     watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
+
+//     let mut json_data = state.json_dict.as_ref().lock().unwrap();
+
+//     for res in rx {
+//         match res {
+//             Ok(event) => {
+//                 assert!(event.paths.len() == 1);
+//                 let path = event.paths.get(0).unwrap();
+//                 let contents = fs::read_to_string(path).unwrap();
+//                 println!("{:?}", contents);
+//                 let contents_str = contents.as_str();
+//                 println!("{:?}", contents_str);
+//                 let parsed_json: Value = serde_json::from_str(contents_str).unwrap();
+//             },
+//             Err(e) => println!("watch error: {:?}", e),
+//         }
+//     }
+
+//     Ok(())
+// }
+
+fn get_routes(state: AppState) -> Router {
     let router = Router::new()
-        .route("/db", get(get_db))
-        .route("/", get(get_static));
+        // .route("/db", get(get_db))
+        // .route("/", get(get_static))
+        .route("/:data_type", post(post_json))
+        .route("/:data_type/:id", put(put_json))
+        .route("/:data_type/:id/:nested", post(post_nested_json));
 
-    return router.with_state(state)
+    router.with_state(state)
 }
 
 fn cli() -> Command {
