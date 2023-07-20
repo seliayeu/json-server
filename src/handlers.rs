@@ -35,12 +35,22 @@ pub async fn put_json(
     Path((collection_name, id)): Path<(String, String)>,
     State(state): State<AppState>,
     Json(payload): Json<Value>,
-) -> Json<Value> {
-    println!("{}, {}", collection_name, id);
-    let mut parsed_json = state.json_dict.as_ref().lock().unwrap();
-    parsed_json.insert(String::from("a"), payload.clone());
+)  {
+    println!("{:?}", state.json_dict);
+    let mut parsed_json = state.json_dict.lock().unwrap();
+    let collection_json = parsed_json[&collection_name].as_array_mut().unwrap();
 
-    Json(payload)
+    let id = id.parse::<i32>().unwrap();
+    let mut payload = payload;
+    let payload = payload.as_array_mut().unwrap();
+    let collection_id = json!({ String::from("id"): id.to_string() });
+    payload.append(&mut vec![collection_id]);
+    let mut payload: Value = payload.clone().into();
+
+    collection_json.append(payload.as_array_mut().unwrap());
+
+    println!("{}", Value::from(parsed_json.clone()));
+
 }
 
 #[axum_macros::debug_handler]
@@ -48,15 +58,17 @@ pub async fn post_nested_json(
     Path((collection_name, id, nested_name)): Path<(String, String, String)>,
     State(state): State<AppState>,
     Json(payload): Json<Value>,
-) -> Json<Value> {
-    let mut payload = payload.clone();
-    let mut payload = payload.as_array_mut().unwrap();
-    let parentId = json!({format!("{}-{}", nested_name, id).as_str(): 13});
-    payload.append(&mut vec![parentId]);
-    
+) {
+    let id = id.parse::<i32>().unwrap();
+    let mut payload = payload;
+    let payload = payload.as_array_mut().unwrap();
+    let parent_id = json!({ format!("{}id", collection_name).as_str(): 2 });
+    let nested_id = json!({ String::from("id"): 2 });
+    payload.append(&mut vec![parent_id]);
+    payload.append(&mut vec![nested_id]);
     let payload: Value = payload.clone().into();
     let mut parsed_json = state.json_dict.as_ref().lock().unwrap();
-    parsed_json.insert(String::from("a"), payload.clone());
+    parsed_json.insert(nested_name, payload.clone());
 
-    Json(payload)
+    print!("{}", Value::from(parsed_json.clone()));
 }

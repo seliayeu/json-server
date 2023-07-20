@@ -34,8 +34,9 @@ async fn main() {
         .expect("Couldn't find database file");
 
     let parsed_json: Value = serde_json::from_str(&contents).unwrap();
+    let parsed_json = parsed_json.as_object().unwrap().clone();
     let state = AppState{ 
-        json_dict: Arc::new( Mutex::new(parsed_json.as_object().unwrap().clone())),
+        json_dict: Arc::new( Mutex::new(parsed_json)),
         json_path: db_path.clone(),
     };
 
