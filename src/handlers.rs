@@ -36,21 +36,24 @@ pub async fn put_json(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 )  {
-    println!("{:?}", state.json_dict);
-    let mut parsed_json = state.json_dict.lock().unwrap();
-    let collection_json = parsed_json[&collection_name].as_array_mut().unwrap();
+    assert!(payload.is_object());
 
-    let id = id.parse::<i32>().unwrap();
-    let mut payload = payload;
-    let payload = payload.as_array_mut().unwrap();
-    let collection_id = json!({ String::from("id"): id.to_string() });
-    payload.append(&mut vec![collection_id]);
-    let mut payload: Value = payload.clone().into();
+    let state_val = { 
+        let mut parsed_json = state.json_dict.lock().unwrap();
+        let collection_json = parsed_json[&collection_name].as_array_mut().unwrap();
+        
+        let id = id.parse::<i32>().unwrap();
+        let mut payload = payload;
+        println!("{:?}", payload);
+        let payload = payload.as_object_mut().unwrap();
+        payload.insert(String::from("id"), json!(id));
+        let payload: Value = payload.clone().into();
 
-    collection_json.append(payload.as_array_mut().unwrap());
+        collection_json.push(payload);
+        Value::from(parsed_json.clone())
+    };
 
-    println!("{}", Value::from(parsed_json.clone()));
-
+    tokio::fs::write(state.json_path.clone(), state_val.to_string()).await.unwrap();
 }
 
 #[axum_macros::debug_handler]
